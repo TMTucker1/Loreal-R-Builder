@@ -189,6 +189,8 @@ function displayProducts(products) {
     .map(
       (product) => {
         const isSelected = selectedProducts.some(p => p.id === product.id);
+        const description = product.description || `${product.brand} ${product.name} - A quality product for your skincare routine.`;
+        
         return `
           <div class="product-card ${isSelected ? 'selected' : ''}" data-product-id="${product.id}">
             <img src="${product.image}" alt="${product.name}">
@@ -200,6 +202,10 @@ function displayProducts(products) {
                       data-product-id="${product.id}">
                 ${isSelected ? '✓ Selected' : 'Add to Selection'}
               </button>
+            </div>
+            <div class="description-tooltip">
+              <strong>${product.name}</strong><br>
+              ${description}
             </div>
           </div>
         `;
@@ -225,11 +231,99 @@ categoryFilter.addEventListener("change", async (e) => {
   displayProducts(filteredProducts);
 });
 
-/* Chat form submission handler - placeholder for OpenAI integration */
-chatForm.addEventListener("submit", (e) => {
+/* Configuration for Cloudflare Worker */
+const WORKER_CONFIG = {
+  // Replace this with your deployed Cloudflare Worker URL
+  WORKER_URL: 'https://aged-poetry-c41e.tmtucke2.workers.dev/'
+};
+
+/* Get the appropriate worker URL based on environment */
+function getWorkerURL() {
+  // Use development URL if running locally, otherwise use production
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? WORKER_CONFIG.DEV_URL 
+    : WORKER_CONFIG.WORKER_URL;
+}
+
+/* Send message to OpenAI via Cloudflare Worker */
+async function sendMessageToOpenAI(message) {
+  try {
+    const response = await fetch(getWorkerURL(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: message,
+        selectedProducts: selectedProducts,
+        userContext: {
+          category: categoryFilter.value,
+          timestamp: new Date().toISOString()
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    return data.message;
+  } catch (error) {
+    console.error('Error calling Cloudflare Worker:', error);
+    throw error;
+  }
+}
+
+/* Add loading state to chat window */
+function showLoadingMessage() {
+  const loadingDiv = document.createElement('div');
+  loadingDiv.id = 'loading-message';
+  loadingDiv.style.cssText = `
+    margin-bottom: 10px; 
+    padding: 10px; 
+    background: rgba(255, 255, 255, 0.1); 
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `;
+  loadingDiv.innerHTML = `
+    <strong>Assistant:</strong> 
+    <div style="display: flex; gap: 2px;">
+      <div style="width: 8px; height: 8px; background: #e3a535; border-radius: 50%; animation: pulse 1.5s infinite;"></div>
+      <div style="width: 8px; height: 8px; background: #e3a535; border-radius: 50%; animation: pulse 1.5s infinite 0.5s;"></div>
+      <div style="width: 8px; height: 8px; background: #e3a535; border-radius: 50%; animation: pulse 1.5s infinite 1s;"></div>
+    </div>
+    <span>Thinking...</span>
+  `;
+  
+  chatWindow.appendChild(loadingDiv);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+/* Remove loading message */
+function removeLoadingMessage() {
+  const loadingMessage = document.getElementById('loading-message');
+  if (loadingMessage) {
+    loadingMessage.remove();
+  }
+}
+
+/* Chat form submission handler with OpenAI integration */
+chatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   
-  const userInput = document.getElementById("userInput").value;
+  const userInput = document.getElementById("userInput").value.trim();
+  
+  if (!userInput) {
+    return;
+  }
   
   /* Add user message to chat window */
   chatWindow.innerHTML += `
@@ -238,22 +332,108 @@ chatForm.addEventListener("submit", (e) => {
     </div>
   `;
   
-  /* Add placeholder response */
-  chatWindow.innerHTML += `
-    <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
-      <strong>Assistant:</strong> Connect to the OpenAI API for a response!
-    </div>
-  `;
-  
-  /* Save chat history and clear input */
-  saveChatHistory();
+  /* Clear input and show loading */
   document.getElementById("userInput").value = "";
+  showLoadingMessage();
   
-  /* Scroll to bottom of chat window */
+  try {
+    /* Send message to OpenAI via Cloudflare Worker */
+    const assistantResponse = await sendMessageToOpenAI(userInput);
+    
+    /* Remove loading and add response */
+    removeLoadingMessage();
+    chatWindow.innerHTML += `
+      <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+        <strong>Assistant:</strong> ${assistantResponse}
+      </div>
+    `;
+    
+  } catch (error) {
+    /* Remove loading and show error */
+    removeLoadingMessage();
+    chatWindow.innerHTML += `
+      <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 0, 59, 0.1); border-radius: 4px; border-left: 3px solid #ff003b;">
+        <strong>Error:</strong> Sorry, I'm having trouble connecting to the AI service. Please try again or check if the Cloudflare Worker is properly configured.
+      </div>
+    `;
+  }
+  
+  /* Save chat history and scroll to bottom */
+  saveChatHistory();
   chatWindow.scrollTop = chatWindow.scrollHeight;
 });
 
 /* Initialize the app by loading user preferences */
 document.addEventListener("DOMContentLoaded", () => {
   loadUserPreferences();
+  
+  // Add event listener for Generate Routine button
+  const generateRoutineBtn = document.getElementById("generateRoutine");
+  if (generateRoutineBtn) {
+    generateRoutineBtn.addEventListener("click", handleGenerateRoutine);
+  }
 });
+
+/* Handle Generate Routine button click */
+async function handleGenerateRoutine() {
+  const generateBtn = document.getElementById("generateRoutine");
+  
+  if (selectedProducts.length === 0) {
+    // Show message if no products selected
+    chatWindow.innerHTML += `
+      <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 0, 59, 0.1); border-radius: 4px; border-left: 3px solid #ff003b;">
+        <strong>Notice:</strong> Please select some products first before generating a routine.
+      </div>
+    `;
+    saveChatHistory();
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    return;
+  }
+
+  // Disable button and show loading state
+  generateBtn.disabled = true;
+  generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
+
+  // Create a routine generation message
+  const routineMessage = `Please create a personalized skincare routine using my selected products. Include the order of use, timing (morning/evening), and any specific tips for each product.`;
+  
+  // Add user message to chat window
+  chatWindow.innerHTML += `
+    <div style="margin-bottom: 10px; padding: 10px; background: rgba(227, 165, 53, 0.1); border-radius: 4px;">
+      <strong>You:</strong> Generate a routine with my selected products
+    </div>
+  `;
+  
+  // Show loading
+  showLoadingMessage();
+  
+  try {
+    // Send message to OpenAI via Cloudflare Worker
+    const assistantResponse = await sendMessageToOpenAI(routineMessage);
+    
+    // Remove loading and add response
+    removeLoadingMessage();
+    chatWindow.innerHTML += `
+      <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
+        <strong>Your Personalized Routine:</strong><br>${assistantResponse.replace(/\n/g, '<br>')}
+      </div>
+    `;
+    
+  } catch (error) {
+    // Remove loading and show error
+    removeLoadingMessage();
+    chatWindow.innerHTML += `
+      <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 0, 59, 0.1); border-radius: 4px; border-left: 3px solid #ff003b;">
+        <strong>Error:</strong> Sorry, I'm having trouble generating your routine. Please try again or check if the Cloudflare Worker is properly configured.
+      </div>
+    `;
+  } finally {
+    // Re-enable button
+    generateBtn.disabled = false;
+    generateBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Routine';
+  }
+  
+  // Save chat history and scroll to bottom
+  saveChatHistory();
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
