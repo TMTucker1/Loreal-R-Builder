@@ -71,13 +71,13 @@ body {
 .search-section select {
   width: 100%;
   padding: 16px;
-  font-size: 18px;
+  font-size: 16px;
   border: 2px solid #e3a535;
   border-radius: 8px;
   cursor: pointer;
   background-color: #222;
   color: white;
-  font-weight: 500;
+  font-weight: 300;
 }
 
 .search-section select:focus {
@@ -102,7 +102,7 @@ body {
 .chat-window {
   padding: 20px;
   font-size: 18px;
-  line-height: 1.5;
+  line-height: 1;
   height: 250px;
   overflow-y: auto;
   background: #333;
@@ -193,7 +193,7 @@ body {
 }
 
 .product-card button.selected {
-  background: #ff003b;
+  background: #ff003c75;
   color: white;
 }
 
@@ -322,7 +322,7 @@ body {
 
 .selected-product-item .remove-btn {
   background: rgba(255, 0, 55 .5) ;
-  color: white;
+  color: rgb(0, 0, 0);
   border: none;
   padding: 6px 12px;
   border-radius: 4px;
@@ -334,6 +334,7 @@ body {
 
 .selected-product-item .remove-btn:hover {
   background: #cc0030;
+  color: white
 }
 
 .selected-count {

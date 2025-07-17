@@ -75,13 +75,13 @@ function updateSelectedProductsDisplay() {
     .map(
       (product, index) => `
         <div class="selected-product-item">
-          <img src="${product.image}" alt="${product.name}">
+          <img src="${product.image}" alt="Image of ${product.name} by ${product.brand} for L'Oréal routine" aria-label="Image of ${product.name} by ${product.brand}">
           <div class="product-details">
             <div class="product-name">${product.name}</div>
             <div class="product-brand">${product.brand}</div>
           </div>
-          <button class="remove-btn" onclick="removeSelectedProduct(${index})">
-            Remove
+          <button class="remove-btn" onclick="removeSelectedProduct(${index})" aria-label="Remove ${product.name} by ${product.brand} from selected products">
+            <span aria-hidden="true">Remove</span>
           </button>
         </div>
       `
@@ -185,25 +185,27 @@ async function loadProducts() {
 
 /* Create HTML for displaying product cards */
 function displayProducts(products) {
-  productsContainer.innerHTML = products
+  // Sort products alphabetically by name
+  const sortedProducts = [...products].sort((a, b) => a.name.localeCompare(b.name));
+  productsContainer.innerHTML = sortedProducts
     .map(
       (product) => {
         const isSelected = selectedProducts.some(p => p.id === product.id);
         const description = product.description || `${product.brand} ${product.name} - A quality product for your skincare routine.`;
-        
         return `
           <div class="product-card ${isSelected ? 'selected' : ''}" data-product-id="${product.id}">
-            <img src="${product.image}" alt="${product.name}">
+            <img src="${product.image}" alt="Image of ${product.name} by ${product.brand} for L'Oréal routine" aria-label="Image of ${product.name} by ${product.brand}">
             <div class="product-info">
               <h3>${product.name}</h3>
               <p>${product.brand}</p>
-              <button onclick="toggleProductSelection(${JSON.stringify(product).replace(/"/g, '&quot;')})" 
+              <button onclick="toggleProductSelection(${JSON.stringify(product).replace(/\"/g, '&quot;')})" 
                       class="${isSelected ? 'selected' : ''}"
-                      data-product-id="${product.id}">
-                ${isSelected ? '✓ Selected' : 'Add to Selection'}
+                      data-product-id="${product.id}"
+                      aria-label="${isSelected ? 'Remove ' + product.name + ' by ' + product.brand + ' from selection' : 'Add ' + product.name + ' by ' + product.brand + ' to selection'}">
+                <span aria-hidden="true">${isSelected ? '✓ Selected' : 'Add to Selection'}</span>
               </button>
             </div>
-            <div class="description-tooltip">
+            <div class="description-tooltip" aria-label="Description for ${product.name} by ${product.brand}">
               <strong>${product.name}</strong><br>
               ${description}
             </div>
