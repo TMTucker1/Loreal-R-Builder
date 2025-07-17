@@ -237,44 +237,167 @@ const WORKER_CONFIG = {
   WORKER_URL: 'https://aged-poetry-c41e.tmtucke2.workers.dev/'
 };
 
-/* Get the appropriate worker URL based on environment */
+/* Get the Cloudflare Worker URL */
 function getWorkerURL() {
-  // Use development URL if running locally, otherwise use production
+  // Return the worker URL from our configuration
   return WORKER_CONFIG.WORKER_URL;
 }
 
 /* Send message to OpenAI via Cloudflare Worker */
-async function sendMessageToOpenAI(message) {
+async function sendMessageToOpenAI(message, selectedProducts = [], userContext = {}) {
   try {
-    const response = await fetch(getWorkerURL(), {
+    // Create enhanced message that includes product information
+    let enhancedMessage = message;
+    
+    // If we have selected products, add them to the message content
+    if (selectedProducts && selectedProducts.length > 0) {
+      const productList = selectedProducts.map(product => 
+        `• ${product.name} by ${product.brand} (Category: ${product.category})`
+      ).join('\n');
+      
+      enhancedMessage = `${message}
+
+SELECTED PRODUCTS:
+${productList}
+
+Please use these specific products in your response and recommendations.`;
+    }
+    
+    // Create the request data in the format your Cloudflare Worker expects
+    // Most OpenAI workers expect a "messages" array, not a single "message"
+    const requestData = {
+      messages: [
+        {
+          role: "user",
+          content: enhancedMessage
+        }
+      ],
+      selectedProducts: selectedProducts,
+      userContext: userContext
+    };
+
+    // Get the correct worker URL
+    const workerURL = getWorkerURL();
+
+    // Log what we're sending (helpful for debugging)
+    console.log('📤 Sending request to Cloudflare Worker:');
+    console.log('🔗 URL:', workerURL);
+    console.log('📦 Request data:', requestData);
+    console.log('🛍️ Selected products count:', selectedProducts.length);
+    console.log('📝 Enhanced message:', enhancedMessage);
+    
+    // Make the API call using fetch
+    const response = await fetch(workerURL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        message: message,
-        selectedProducts: selectedProducts,
-        userContext: {
-          category: categoryFilter.value,
-          timestamp: new Date().toISOString()
-        }
-      })
+      body: JSON.stringify(requestData)
     });
 
+    // Log the response status
+    console.log('📥 Response status:', response.status);
+    console.log('📋 Response headers:', response.headers);
+
+    // Check if the request was successful
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Try to get the error details from the response
+      let errorDetails = 'No error details available';
+      
+      try {
+        const errorText = await response.text();
+        console.log('❌ Error response body:', errorText);
+        
+        // Try to parse it as JSON first
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorDetails = errorJson.error || errorJson.message || errorText;
+        } catch (parseError) {
+          // If not JSON, use the raw text
+          errorDetails = errorText;
+        }
+      } catch (readError) {
+        console.log('❌ Could not read error response:', readError);
+      }
+
+      // Create a helpful error message for students
+      const errorMessage = `HTTP error! status: ${response.status} - ${errorDetails}`;
+      console.log('❌ Full error message:', errorMessage);
+      
+      // Show user-friendly error in chat (using our existing chat format)
+      addErrorMessageToChat(response.status, errorDetails);
+      
+      throw new Error(errorMessage);
     }
 
+    // If successful, parse the response
     const data = await response.json();
+    console.log('✅ Success! Response data:', data);
     
-    if (data.error) {
-      throw new Error(data.error);
+    // Extract the actual message content from OpenAI's response format
+    // OpenAI returns: { choices: [{ message: { content: "actual message" } }] }
+    let messageContent = '';
+    
+    if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+      // This is the standard OpenAI API response format
+      messageContent = data.choices[0].message.content;
+    } else if (data.response) {
+      // Some workers might return it as 'response'
+      messageContent = data.response;
+    } else if (data.message) {
+      // Some workers might return it as 'message'
+      messageContent = data.message;
+    } else if (data.content) {
+      // Some workers might return it as 'content'
+      messageContent = data.content;
+    } else {
+      // If we can't find the message in expected places, return the whole response
+      messageContent = JSON.stringify(data);
     }
-
-    return data.message;
+    
+    console.log('📝 Extracted message content:', messageContent);
+    return messageContent;
+    
   } catch (error) {
-    console.error('Error calling Cloudflare Worker:', error);
+    console.error('❌ Error calling Cloudflare Worker:', error);
     throw error;
+  }
+}
+
+/* Add error message to chat window */
+function addErrorMessageToChat(statusCode, errorDetails) {
+  const errorExplanation = getErrorExplanation(statusCode);
+  
+  chatWindow.innerHTML += `
+    <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 0, 59, 0.1); border-radius: 4px; border-left: 3px solid #ff003b;">
+      <strong>API Error (${statusCode}):</strong><br>
+      ${errorExplanation}<br><br>
+      <strong>Details:</strong> ${errorDetails}
+    </div>
+  `;
+  
+  // Save chat history and scroll to bottom
+  saveChatHistory();
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+/* Helper function to explain different error codes to students */
+function getErrorExplanation(statusCode) {
+  switch (statusCode) {
+    case 400:
+      return `**Bad Request**: The server couldn't understand our request. This usually means:\n• Missing required fields\n• Wrong data format\n• Invalid JSON structure\n• Check your Cloudflare Worker expects the data we're sending`;
+    case 401:
+      return `**Unauthorized**: API key is missing or invalid. Check your OpenAI API key in the Cloudflare Worker.`;
+    case 403:
+      return `**Forbidden**: API key doesn't have permission or quota exceeded.`;
+    case 404:
+      return `**Not Found**: The Cloudflare Worker URL might be wrong.`;
+    case 429:
+      return `**Too Many Requests**: You're hitting rate limits. Wait a moment and try again.`;
+    case 500:
+      return `**Internal Server Error**: Something went wrong on the server side.`;
+    default:
+      return `**Unknown Error**: Status code ${statusCode}. Check the details below.`;
   }
 }
 
@@ -392,8 +515,17 @@ async function handleGenerateRoutine() {
   generateBtn.disabled = true;
   generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
 
-  // Create a routine generation message
-  const routineMessage = `Please create a personalized skincare routine using my selected products. Include the order of use, timing (morning/evening), and any specific tips for each product.`;
+  // Create a detailed routine generation message with product information
+  const routineMessage = `Please create a personalized skincare routine using my selected products. 
+
+REQUIREMENTS:
+- Show the correct order of application
+- Specify timing (morning routine, evening routine, or both)
+- Include specific tips for each product
+- Add any important considerations or warnings
+- Make it practical and easy to follow
+
+Please create a complete routine using the products I have selected.`;
   
   // Add user message to chat window
   chatWindow.innerHTML += `
@@ -406,8 +538,13 @@ async function handleGenerateRoutine() {
   showLoadingMessage();
   
   try {
-    // Send message to OpenAI via Cloudflare Worker
-    const assistantResponse = await sendMessageToOpenAI(routineMessage);
+    // Send message to OpenAI via Cloudflare Worker with selected products and context
+    const userContext = {
+      category: categoryFilter.value || 'general',
+      timestamp: new Date().toISOString()
+    };
+    
+    const assistantResponse = await sendMessageToOpenAI(routineMessage, selectedProducts, userContext);
     
     // Remove loading and add response
     removeLoadingMessage();
