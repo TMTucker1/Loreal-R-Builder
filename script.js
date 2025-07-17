@@ -257,16 +257,22 @@ async function sendMessageToOpenAI(message, selectedProducts = [], userContext =
       
       enhancedMessage = `${message}
 
-SELECTED PRODUCTS:
+MY SELECTED L'ORÉAL PRODUCTS:
 ${productList}
 
-Please use these specific products in your response and recommendations.`;
+CONTEXT: I'm looking for expert advice on L'Oréal products. Please focus on L'Oréal's quality, innovation, and benefits. Feel free to recommend additional L'Oréal products that would enhance my routine and explain why they work well together.
+
+Please use these specific L'Oréal products in your response and provide L'Oréal-focused recommendations.`;
     }
     
     // Create the request data in the format your Cloudflare Worker expects
     // Most OpenAI workers expect a "messages" array, not a single "message"
     const requestData = {
       messages: [
+        {
+          role: "system",
+          content: "You are a L'Oréal beauty expert and product specialist. Focus on L'Oréal products, their benefits, and quality. When users ask about routines or products, always emphasize L'Oréal's expertise and recommend specific L'Oréal products. Be knowledgeable about skincare, haircare, makeup, and fragrance. Always maintain a professional, helpful tone that reflects L'Oréal's premium brand image."
+        },
         {
           role: "user",
           content: enhancedMessage
@@ -415,13 +421,13 @@ function showLoadingMessage() {
     gap: 10px;
   `;
   loadingDiv.innerHTML = `
-    <strong>Assistant:</strong> 
+    <strong>L'Oréal Expert:</strong> 
     <div style="display: flex; gap: 2px;">
       <div style="width: 8px; height: 8px; background: #e3a535; border-radius: 50%; animation: pulse 1.5s infinite;"></div>
       <div style="width: 8px; height: 8px; background: #e3a535; border-radius: 50%; animation: pulse 1.5s infinite 0.5s;"></div>
       <div style="width: 8px; height: 8px; background: #e3a535; border-radius: 50%; animation: pulse 1.5s infinite 1s;"></div>
     </div>
-    <span>Thinking...</span>
+    <span>Analyzing your L'Oréal routine...</span>
   `;
   
   chatWindow.appendChild(loadingDiv);
@@ -459,13 +465,19 @@ chatForm.addEventListener("submit", async (e) => {
   
   try {
     /* Send message to OpenAI via Cloudflare Worker */
-    const assistantResponse = await sendMessageToOpenAI(userInput);
+    const userContext = {
+      category: categoryFilter.value || 'general',
+      timestamp: new Date().toISOString(),
+      role: 'loreal_expert'
+    };
+    
+    const assistantResponse = await sendMessageToOpenAI(userInput, selectedProducts, userContext);
     
     /* Remove loading and add response */
     removeLoadingMessage();
     chatWindow.innerHTML += `
       <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
-        <strong>Assistant:</strong> ${assistantResponse}
+        <strong>L'Oréal Expert:</strong> ${assistantResponse}
       </div>
     `;
     
@@ -516,16 +528,19 @@ async function handleGenerateRoutine() {
   generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
 
   // Create a detailed routine generation message with product information
-  const routineMessage = `Please create a personalized skincare routine using my selected products. 
+  const routineMessage = `As a L'Oréal beauty expert, please create a personalized beauty routine using my selected L'Oréal products.
 
 REQUIREMENTS:
-- Show the correct order of application
+- Focus specifically on L'Oréal products and their benefits
+- Show the correct order of application for my selected products
 - Specify timing (morning routine, evening routine, or both)
-- Include specific tips for each product
+- Include specific tips for each L'Oréal product I've selected
+- Recommend additional L'Oréal products that would complement my routine
+- Explain why these L'Oréal products work well together
 - Add any important considerations or warnings
 - Make it practical and easy to follow
 
-Please create a complete routine using the products I have selected.`;
+Please act as a L'Oréal product specialist and create a complete routine that showcases the quality and benefits of L'Oréal products.`;
   
   // Add user message to chat window
   chatWindow.innerHTML += `
@@ -550,7 +565,7 @@ Please create a complete routine using the products I have selected.`;
     removeLoadingMessage();
     chatWindow.innerHTML += `
       <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 4px;">
-        <strong>Your Personalized Routine:</strong><br>${assistantResponse.replace(/\n/g, '<br>')}
+        <strong>L'Oréal Expert - Your Personalized Routine:</strong><br>${assistantResponse.replace(/\n/g, '<br>')}
       </div>
     `;
     
