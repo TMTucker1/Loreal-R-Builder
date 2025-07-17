@@ -245,38 +245,52 @@ function getWorkerURL() {
     : WORKER_CONFIG.WORKER_URL;
 }
 
-/* Send message to OpenAI via Cloudflare Worker */
-async function sendMessageToOpenAI(message) {
+// Function to call OpenAI API
+async function getAIResponse(userMessage) {
+  console.log("Sending request to Cloudflare Worker...");
+
+  // Add user message to conversation history
+  conversationHistory.push({ role: "user", content: userMessage });
+
+  // The data we send to the Cloudflare Worker
+  const data = {
+    model: "gpt-4o", // Use the gpt-4o model
+    messages: conversationHistory,
+  };
+
   try {
-    const response = await fetch(getWorkerURL(), {
-      method: 'POST',
+    console.log("Request payload:", data);
+
+    // Make the API request using fetch and async/await
+    const response = await fetch(workerUrl, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        message: message,
-        selectedProducts: selectedProducts,
-        userContext: {
-          category: categoryFilter.value,
-          timestamp: new Date().toISOString()
-        }
-      })
+      body: JSON.stringify(data),
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    console.log("Response status:", response.status);
 
-    const data = await response.json();
-    
-    if (data.error) {
-      throw new Error(data.error);
-    }
+    // Parse the response as JSON
+    const result = await response.json();
 
-    return data.message;
+    console.log("Response data:", result);
+
+    // Get the AI's reply from the response
+    const aiMessage = result.choices && result.choices[0].message.content;
+
+    // Add AI response to conversation history
+    conversationHistory.push({ role: "assistant", content: aiMessage });
+
+    return aiMessage || "Sorry, I didn't understand that.";
   } catch (error) {
-    console.error('Error calling Cloudflare Worker:', error);
-    throw error;
+    console.error(
+      "Error occurred while connecting to Cloudflare Worker:",
+      error
+    );
+    // If there is an error, show a message
+    return "Error: Unable to connect to the Cloudflare Worker.";
   }
 }
 
